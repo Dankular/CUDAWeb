@@ -1,0 +1,34 @@
+[package]
+name = "cudaweb-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM module for Gaussian Splatting CPU operations"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+wasm-bindgen = "0.2.92"
+js-sys = "0.3.69"
+web-sys = { version = "0.3.69", features = [
+    "console",
+    "Performance",
+    "Window",
+] }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+rayon = "1.10"
+wasm-bindgen-rayon = "1.2"
+nalgebra = "0.33"
+kiddo = "4.2"  # KD-tree for spatial queries
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.42"
+
+[profile.release]
+opt-level = 3
+lto = true
