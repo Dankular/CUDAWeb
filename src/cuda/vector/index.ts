@@ -249,6 +249,277 @@ export class Float4 {
 }
 
 // ============================================================================
+// Double Precision Vector Types (CPU-side, using JavaScript's native float64)
+// ============================================================================
+
+export class Double2 {
+  x: number;
+  y: number;
+
+  constructor(x: number = 0, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+
+  static make(x: number, y: number): Double2 {
+    return new Double2(x, y);
+  }
+
+  add(other: Double2): Double2 {
+    return new Double2(this.x + other.x, this.y + other.y);
+  }
+
+  sub(other: Double2): Double2 {
+    return new Double2(this.x - other.x, this.y - other.y);
+  }
+
+  mul(other: Double2): Double2 {
+    return new Double2(this.x * other.x, this.y * other.y);
+  }
+
+  div(other: Double2): Double2 {
+    return new Double2(this.x / other.x, this.y / other.y);
+  }
+
+  scale(s: number): Double2 {
+    return new Double2(this.x * s, this.y * s);
+  }
+
+  dot(other: Double2): number {
+    return this.x * other.x + this.y * other.y;
+  }
+
+  length(): number {
+    return Math.sqrt(this.x * this.x + this.y * this.y);
+  }
+
+  normalize(): Double2 {
+    const len = this.length();
+    return new Double2(this.x / len, this.y / len);
+  }
+
+  lerp(other: Double2, t: number): Double2 {
+    return new Double2(
+      this.x + t * (other.x - this.x),
+      this.y + t * (other.y - this.y)
+    );
+  }
+
+  toArray(): [number, number] {
+    return [this.x, this.y];
+  }
+
+  toFloat64Array(): Float64Array {
+    return new Float64Array([this.x, this.y]);
+  }
+
+  toFloat32Array(): Float32Array {
+    return new Float32Array([this.x, this.y]);
+  }
+
+  // Convert to emulated double format (two u32 per component)
+  toEmulatedArray(): Uint32Array {
+    const f64 = new Float64Array([this.x, this.y]);
+    const u32 = new Uint32Array(f64.buffer);
+    return u32;
+  }
+}
+
+export class Double3 {
+  x: number;
+  y: number;
+  z: number;
+
+  constructor(x: number = 0, y: number = 0, z: number = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+
+  static make(x: number, y: number, z: number): Double3 {
+    return new Double3(x, y, z);
+  }
+
+  add(other: Double3): Double3 {
+    return new Double3(this.x + other.x, this.y + other.y, this.z + other.z);
+  }
+
+  sub(other: Double3): Double3 {
+    return new Double3(this.x - other.x, this.y - other.y, this.z - other.z);
+  }
+
+  mul(other: Double3): Double3 {
+    return new Double3(this.x * other.x, this.y * other.y, this.z * other.z);
+  }
+
+  div(other: Double3): Double3 {
+    return new Double3(this.x / other.x, this.y / other.y, this.z / other.z);
+  }
+
+  scale(s: number): Double3 {
+    return new Double3(this.x * s, this.y * s, this.z * s);
+  }
+
+  dot(other: Double3): number {
+    return this.x * other.x + this.y * other.y + this.z * other.z;
+  }
+
+  cross(other: Double3): Double3 {
+    return new Double3(
+      this.y * other.z - this.z * other.y,
+      this.z * other.x - this.x * other.z,
+      this.x * other.y - this.y * other.x
+    );
+  }
+
+  length(): number {
+    return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+  }
+
+  normalize(): Double3 {
+    const len = this.length();
+    return new Double3(this.x / len, this.y / len, this.z / len);
+  }
+
+  lerp(other: Double3, t: number): Double3 {
+    return new Double3(
+      this.x + t * (other.x - this.x),
+      this.y + t * (other.y - this.y),
+      this.z + t * (other.z - this.z)
+    );
+  }
+
+  toArray(): [number, number, number] {
+    return [this.x, this.y, this.z];
+  }
+
+  toFloat64Array(): Float64Array {
+    return new Float64Array([this.x, this.y, this.z]);
+  }
+
+  toFloat32Array(): Float32Array {
+    return new Float32Array([this.x, this.y, this.z]);
+  }
+
+  // Convert to emulated double format (two u32 per component)
+  toEmulatedArray(): Uint32Array {
+    const f64 = new Float64Array([this.x, this.y, this.z]);
+    const u32 = new Uint32Array(f64.buffer);
+    return u32;
+  }
+}
+
+export class Double4 {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+
+  constructor(x: number = 0, y: number = 0, z: number = 0, w: number = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+  }
+
+  static make(x: number, y: number, z: number, w: number): Double4 {
+    return new Double4(x, y, z, w);
+  }
+
+  add(other: Double4): Double4 {
+    return new Double4(
+      this.x + other.x,
+      this.y + other.y,
+      this.z + other.z,
+      this.w + other.w
+    );
+  }
+
+  sub(other: Double4): Double4 {
+    return new Double4(
+      this.x - other.x,
+      this.y - other.y,
+      this.z - other.z,
+      this.w - other.w
+    );
+  }
+
+  mul(other: Double4): Double4 {
+    return new Double4(
+      this.x * other.x,
+      this.y * other.y,
+      this.z * other.z,
+      this.w * other.w
+    );
+  }
+
+  div(other: Double4): Double4 {
+    return new Double4(
+      this.x / other.x,
+      this.y / other.y,
+      this.z / other.z,
+      this.w / other.w
+    );
+  }
+
+  scale(s: number): Double4 {
+    return new Double4(this.x * s, this.y * s, this.z * s, this.w * s);
+  }
+
+  dot(other: Double4): number {
+    return (
+      this.x * other.x +
+      this.y * other.y +
+      this.z * other.z +
+      this.w * other.w
+    );
+  }
+
+  length(): number {
+    return Math.sqrt(
+      this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w
+    );
+  }
+
+  normalize(): Double4 {
+    const len = this.length();
+    return new Double4(this.x / len, this.y / len, this.z / len, this.w / len);
+  }
+
+  lerp(other: Double4, t: number): Double4 {
+    return new Double4(
+      this.x + t * (other.x - this.x),
+      this.y + t * (other.y - this.y),
+      this.z + t * (other.z - this.z),
+      this.w + t * (other.w - this.w)
+    );
+  }
+
+  toArray(): [number, number, number, number] {
+    return [this.x, this.y, this.z, this.w];
+  }
+
+  toFloat64Array(): Float64Array {
+    return new Float64Array([this.x, this.y, this.z, this.w]);
+  }
+
+  toFloat32Array(): Float32Array {
+    return new Float32Array([this.x, this.y, this.z, this.w]);
+  }
+
+  // Convert to emulated double format (two u32 per component)
+  toEmulatedArray(): Uint32Array {
+    const f64 = new Float64Array([this.x, this.y, this.z, this.w]);
+    const u32 = new Uint32Array(f64.buffer);
+    return u32;
+  }
+
+  get xyz(): Double3 {
+    return new Double3(this.x, this.y, this.z);
+  }
+}
+
+// ============================================================================
 // Integer Vector Types
 // ============================================================================
 
@@ -819,6 +1090,9 @@ export function withCudaVector(shaderCode: string): string {
 export const make_float2 = Float2.make;
 export const make_float3 = Float3.make;
 export const make_float4 = Float4.make;
+export const make_double2 = Double2.make;
+export const make_double3 = Double3.make;
+export const make_double4 = Double4.make;
 export const make_int2 = Int2.make;
 export const make_int3 = Int3.make;
 export const make_int4 = Int4.make;

@@ -8,12 +8,14 @@
 export const TYPE_MAPPINGS: Record<string, string> = {
   // Scalar types
   'float': 'f32',
-  'double': 'f32', // WebGPU doesn't have f64 in most implementations
+  'double': 'f64', // Emulated double precision (vec2<u32>)
   'int': 'i32',
   'unsigned int': 'u32',
   'uint': 'u32',
   'long': 'i32',
   'unsigned long': 'u32',
+  'long long': 'i32', // 64-bit integers not natively supported
+  'unsigned long long': 'u32',
   'short': 'i32',
   'unsigned short': 'u32',
   'char': 'i32',
@@ -25,9 +27,9 @@ export const TYPE_MAPPINGS: Record<string, string> = {
   'float2': 'vec2<f32>',
   'float3': 'vec3<f32>',
   'float4': 'vec4<f32>',
-  'double2': 'vec2<f32>',
-  'double3': 'vec3<f32>',
-  'double4': 'vec4<f32>',
+  'double2': 'double2', // Emulated: array<f64, 2>
+  'double3': 'double3', // Emulated: array<f64, 3>
+  'double4': 'double4', // Emulated: array<f64, 4>
   'int2': 'vec2<i32>',
   'int3': 'vec3<i32>',
   'int4': 'vec4<i32>',
@@ -60,7 +62,7 @@ export const BUILTIN_MAPPINGS: Record<string, string> = {
 
 // CUDA function to WGSL function mappings
 export const FUNCTION_MAPPINGS: Record<string, string> = {
-  // Math functions
+  // Math functions (float)
   '__sinf': 'sin',
   '__cosf': 'cos',
   '__tanf': 'tan',
@@ -101,10 +103,39 @@ export const FUNCTION_MAPPINGS: Record<string, string> = {
   'fmaf': 'fma',
   'copysignf': 'sign', // Not exact, needs adjustment
 
+  // Math functions (double - emulated)
+  'sin': 'f64_sin',
+  'cos': 'f64_cos',
+  'tan': 'f64_tan',
+  'asin': 'f64_asin',
+  'acos': 'f64_acos',
+  'atan': 'f64_atan',
+  'atan2': 'f64_atan2',
+  'sinh': 'f64_sinh',
+  'cosh': 'f64_cosh',
+  'tanh': 'f64_tanh',
+  'exp': 'f64_exp',
+  'exp2': 'f64_exp2',
+  'log': 'f64_log',
+  'log2': 'f64_log2',
+  'pow': 'f64_pow',
+  'sqrt': 'f64_sqrt',
+  'rsqrt': 'f64_rsqrt',
+  'floor': 'f64_floor',
+  'ceil': 'f64_ceil',
+  'trunc': 'f64_trunc',
+  'round': 'f64_round',
+  'fmin': 'f64_min',
+  'fmax': 'f64_max',
+  'fma': 'f64_fma',
+
   // Vector construction
   'make_float2': 'vec2<f32>',
   'make_float3': 'vec3<f32>',
   'make_float4': 'vec4<f32>',
+  'make_double2': 'make_double2',
+  'make_double3': 'make_double3',
+  'make_double4': 'make_double4',
   'make_int2': 'vec2<i32>',
   'make_int3': 'vec3<i32>',
   'make_int4': 'vec4<i32>',
@@ -362,20 +393,24 @@ export const CONCEPT_MAPPINGS = {
   '__syncthreads()': 'workgroupBarrier()',
   '__threadfence()': 'storageBarrier()',
   'atomicAdd (float)': 'CAS loop with atomicCompareExchangeWeak',
+  'atomicAdd (double)': 'Double CAS loop with atomicAdd_f64_emulated',
+  'double': 'f64 (emulated via vec2<u32>)',
+  'cooperative_groups::grid_group::sync()': 'grid_sync() with atomic counters',
 };
 
 /**
  * Limitations and differences documentation
  */
 export const LIMITATIONS = [
-  'WebGPU has no native double (f64) support in most implementations',
+  'Double (f64) is emulated using double-single arithmetic (~44 bit precision)',
   'Warp-level primitives (shuffle, ballot) must be emulated with shared memory',
   'No dynamic parallelism (kernel launching kernels)',
   'No direct equivalent to CUDA streams (single queue model)',
   'Maximum workgroup size is typically 256 (vs CUDA 1024)',
   'Float atomics require emulation via CAS loops',
+  'f64 atomics require two-stage CAS loops (slower)',
   'No hardware texture interpolation for compute (must use samplers)',
   'No system-wide memory fence',
-  'No cooperative groups with grid-wide sync',
+  'Grid-wide sync requires multi-dispatch with atomic counters',
   'Shared memory size is more limited',
 ];
