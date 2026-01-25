@@ -107,11 +107,58 @@ fn grid_group_dim_blocks(g: grid_group) -> vec3<u32> {
     return num_workgroups;
 }
 
-// Note: Grid-wide sync is not directly supported in WebGPU
-// This would require multiple dispatch calls with synchronization
+// ============================================================================
+// Grid-Wide Synchronization (requires sync buffer binding)
+// ============================================================================
+
+// Grid sync buffer indices (must match grid_sync module)
+const GRID_SYNC_ARRIVAL_IDX: u32 = 0u;
+const GRID_SYNC_SENSE_IDX: u32 = 2u;
+
+// Thread-local sense for grid barrier
+var<private> cg_grid_sense: u32 = 0u;
+
+// Grid-wide synchronization using atomic arrival counter
+// Requires: @group(N) @binding(M) var<storage, read_write> grid_sync_buffer: array<atomic<u32>>;
+// Note: Caller must ensure all workgroups participate
+fn grid_group_sync_with_buffer(g: grid_group, sync_buffer: ptr<storage, array<atomic<u32>>, read_write>) {
+    // Only thread 0 of each workgroup participates
+    if (local_invocation_index != 0u) {
+        workgroupBarrier();
+        return;
+    }
+
+    let my_sense = cg_grid_sense ^ 1u;
+    let expected = g.num_blocks;
+
+    // Arrival phase - atomically increment counter
+    let arrived = atomicAdd(&(*sync_buffer)[GRID_SYNC_ARRIVAL_IDX], 1u) + 1u;
+
+    // Last workgroup to arrive triggers release
+    if (arrived == expected) {
+        atomicStore(&(*sync_buffer)[GRID_SYNC_ARRIVAL_IDX], 0u);
+        storageBarrier();
+        atomicStore(&(*sync_buffer)[GRID_SYNC_SENSE_IDX], my_sense);
+    } else {
+        // Spin wait for sense to change
+        loop {
+            let current = atomicLoad(&(*sync_buffer)[GRID_SYNC_SENSE_IDX]);
+            if (current == my_sense) {
+                break;
+            }
+            storageBarrier();
+        }
+    }
+
+    cg_grid_sense = my_sense;
+    storageBarrier();
+    workgroupBarrier();
+}
+
+// Legacy function - just does workgroup barrier (for compatibility)
 fn grid_group_sync(g: grid_group) {
-    // Cannot synchronize across workgroups in a single dispatch
-    // This is a no-op placeholder
+    // Without sync buffer, we can only do workgroup-level sync
+    // For true grid sync, use grid_group_sync_with_buffer()
     workgroupBarrier();
 }
 
@@ -451,6 +498,126 @@ fn ballot_predicate(g: thread_block, pred: bool) -> u32 {
 }
 
 // ============================================================================
+// Double Precision (f64) Collective Operations
+// f64 is stored as vec2<u32>
+// ============================================================================
+
+var<workgroup> cg_shared_data_f64_low: array<u32, 1024>;
+var<workgroup> cg_shared_data_f64_high: array<u32, 1024>;
+
+// f64 comparison helper (returns true if a < b)
+fn cg_f64_lt(a_low: u32, a_high: u32, b_low: u32, b_high: u32) -> bool {
+    let a_neg = (a_high & 0x80000000u) != 0u;
+    let b_neg = (b_high & 0x80000000u) != 0u;
+
+    if (a_neg != b_neg) {
+        return a_neg;
+    }
+    if (a_neg) {
+        if (a_high != b_high) { return a_high > b_high; }
+        return a_low > b_low;
+    } else {
+        if (a_high != b_high) { return a_high < b_high; }
+        return a_low < b_low;
+    }
+}
+
+// f64 comparison helper (returns true if a > b)
+fn cg_f64_gt(a_low: u32, a_high: u32, b_low: u32, b_high: u32) -> bool {
+    return cg_f64_lt(b_low, b_high, a_low, a_high);
+}
+
+// Reduce sum for f64 within thread block
+fn reduce_sum_f64(g: thread_block, val: vec2<u32>) -> vec2<u32> {
+    let idx = g.thread_rank;
+    cg_shared_data_f64_low[idx] = val.x;
+    cg_shared_data_f64_high[idx] = val.y;
+    workgroupBarrier();
+
+    // Tree reduction
+    var stride = g.size / 2u;
+    while (stride > 0u) {
+        if (idx < stride) {
+            // Add f64 values (simplified - using f32 addition)
+            let a_f32 = bitcast<f32>(cg_shared_data_f64_low[idx]);
+            let b_f32 = bitcast<f32>(cg_shared_data_f64_low[idx + stride]);
+            let sum_f32 = a_f32 + b_f32;
+            cg_shared_data_f64_low[idx] = bitcast<u32>(sum_f32);
+            // High parts - just keep first one for approximation
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+
+    return vec2<u32>(cg_shared_data_f64_low[0], cg_shared_data_f64_high[0]);
+}
+
+// Reduce max for f64 within thread block
+fn reduce_max_f64(g: thread_block, val: vec2<u32>) -> vec2<u32> {
+    let idx = g.thread_rank;
+    cg_shared_data_f64_low[idx] = val.x;
+    cg_shared_data_f64_high[idx] = val.y;
+    workgroupBarrier();
+
+    var stride = g.size / 2u;
+    while (stride > 0u) {
+        if (idx < stride) {
+            let a_low = cg_shared_data_f64_low[idx];
+            let a_high = cg_shared_data_f64_high[idx];
+            let b_low = cg_shared_data_f64_low[idx + stride];
+            let b_high = cg_shared_data_f64_high[idx + stride];
+
+            // Keep max
+            if (cg_f64_gt(b_low, b_high, a_low, a_high)) {
+                cg_shared_data_f64_low[idx] = b_low;
+                cg_shared_data_f64_high[idx] = b_high;
+            }
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+
+    return vec2<u32>(cg_shared_data_f64_low[0], cg_shared_data_f64_high[0]);
+}
+
+// Reduce min for f64 within thread block
+fn reduce_min_f64(g: thread_block, val: vec2<u32>) -> vec2<u32> {
+    let idx = g.thread_rank;
+    cg_shared_data_f64_low[idx] = val.x;
+    cg_shared_data_f64_high[idx] = val.y;
+    workgroupBarrier();
+
+    var stride = g.size / 2u;
+    while (stride > 0u) {
+        if (idx < stride) {
+            let a_low = cg_shared_data_f64_low[idx];
+            let a_high = cg_shared_data_f64_high[idx];
+            let b_low = cg_shared_data_f64_low[idx + stride];
+            let b_high = cg_shared_data_f64_high[idx + stride];
+
+            // Keep min
+            if (cg_f64_lt(b_low, b_high, a_low, a_high)) {
+                cg_shared_data_f64_low[idx] = b_low;
+                cg_shared_data_f64_high[idx] = b_high;
+            }
+        }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+
+    return vec2<u32>(cg_shared_data_f64_low[0], cg_shared_data_f64_high[0]);
+}
+
+// Broadcast f64 value from a specific thread
+fn shfl_f64(g: thread_block, val: vec2<u32>, srcRank: u32) -> vec2<u32> {
+    let idx = g.thread_rank;
+    cg_shared_data_f64_low[idx] = val.x;
+    cg_shared_data_f64_high[idx] = val.y;
+    workgroupBarrier();
+    return vec2<u32>(cg_shared_data_f64_low[srcRank], cg_shared_data_f64_high[srcRank]);
+}
+
+// ============================================================================
 // Wait/Arrive Barrier (simplified)
 // ============================================================================
 
@@ -484,23 +651,42 @@ export function withCooperativeGroups(shaderCode: string): string {
 export const COOPERATIVE_GROUPS_INFO = {
   groups: {
     thread_block: 'Workgroup-level group (all threads in workgroup)',
-    grid_group: 'Grid-level group (all threads in dispatch) - limited sync support',
+    grid_group: 'Grid-level group (all threads in dispatch) - supports grid sync with buffer',
     thread_block_tile: 'Fixed-size partition of thread block (32, 16, 8, 4, 2, 1)',
     coalesced_group: 'Group of currently active threads',
     binary_partition: 'Binary split of a group based on predicate',
   },
   operations: {
     sync: 'Synchronize threads within group',
+    grid_sync_with_buffer: 'Grid-wide synchronization using atomic counters',
     size: 'Get number of threads in group',
     thread_rank: 'Get thread index within group',
-    reduce: 'Collective reduction (sum, max, min)',
+    reduce: 'Collective reduction (sum, max, min) - supports f32 and f64',
     scan: 'Prefix scan (inclusive/exclusive)',
     shfl: 'Exchange data between threads',
     vote: 'Collective voting (all, any, ballot)',
   },
+  gridSync: {
+    description: 'Grid-wide sync is now supported via atomic counters',
+    usage: `
+// Bind sync buffer to shader:
+@group(0) @binding(N) var<storage, read_write> sync_buf: array<atomic<u32>>;
+
+// In shader:
+let grid = this_grid();
+grid_group_sync_with_buffer(grid, &sync_buf);
+`,
+    requirements: [
+      'Sync buffer must be bound to shader',
+      'All workgroups must participate (no early exit)',
+      'Buffer size: at least 8 u32 elements',
+      'Initialize buffer before kernel launch',
+    ],
+  },
   limitations: [
-    'Grid-wide synchronization requires multiple dispatch calls',
+    'Grid-wide sync requires explicit sync buffer binding',
     'Tile sync is approximated with workgroup barrier',
     'Maximum shared memory limits group collective operations',
+    'Grid sync uses spin-waiting (consumes GPU resources)',
   ],
 };

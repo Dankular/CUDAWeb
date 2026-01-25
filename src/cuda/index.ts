@@ -127,6 +127,8 @@ export {
   withCudaVector,
   // Float vectors
   Float2, Float3, Float4,
+  // Double vectors (CPU-side, uses JS float64)
+  Double2, Double3, Double4,
   // Integer vectors
   Int2, Int3, Int4,
   // Unsigned integer vectors
@@ -137,9 +139,34 @@ export {
   Quat,
   // Factory functions
   make_float2, make_float3, make_float4,
+  make_double2, make_double3, make_double4,
   make_int2, make_int3, make_int4,
   make_uint2, make_uint3, make_uint4,
 } from './vector';
+
+// =============================================================================
+// Double Precision (f64) Emulation
+// =============================================================================
+
+export {
+  CUDA_F64_WGSL,
+  CUDA_F64_INFO,
+  withCudaF64,
+  Double64Buffer,
+} from './f64';
+
+// =============================================================================
+// Grid-Wide Synchronization
+// =============================================================================
+
+export {
+  CUDA_GRID_SYNC_WGSL,
+  GRID_SYNC_INFO,
+  withGridSync,
+  calculateSyncBufferSize,
+  GridSyncBuffer,
+  MultiPassExecutor,
+} from './grid_sync';
 
 // =============================================================================
 // Texture and Surface Operations
@@ -284,6 +311,8 @@ import { CUDA_COOPERATIVE_GROUPS_WGSL } from './cooperative_groups';
 import { CUDA_ATOMIC_WGSL } from './atomic';
 import { CUDA_TEXTURE_WGSL } from './texture';
 import { CURAND_WGSL } from './rand';
+import { CUDA_F64_WGSL } from './f64';
+import { CUDA_GRID_SYNC_WGSL } from './grid_sync';
 
 /**
  * Complete CUDA-compatible WGSL library
@@ -300,9 +329,13 @@ ${CUDA_VECTOR_WGSL}
 
 ${CUDA_ATOMIC_WGSL}
 
+${CUDA_F64_WGSL}
+
 ${CUDA_WARP_WGSL}
 
 ${CUDA_COOPERATIVE_GROUPS_WGSL}
+
+${CUDA_GRID_SYNC_WGSL}
 
 ${CURAND_WGSL}
 
@@ -322,16 +355,18 @@ export function withCudaComplete(shaderCode: string): string {
 
 export const CUDA_SDK_INFO = {
   name: 'CUDA SDK for WebGPU',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'CUDA-compatible GPU compute SDK using WebGPU',
   modules: {
     runtime: 'Device, memory, stream, event, and kernel management',
     math: 'Mathematical functions (trigonometric, exponential, special)',
-    vector: 'Vector and matrix types with operations',
+    vector: 'Vector and matrix types with operations (float, double, int)',
+    f64: 'Double precision (f64) emulation with ~44-bit precision',
     texture: 'Texture and surface binding and sampling',
     warp: 'Warp-level primitives (shuffle, ballot, vote)',
-    cooperativeGroups: 'Cooperative thread group operations',
-    atomic: 'Atomic operations (native and emulated)',
+    cooperativeGroups: 'Cooperative thread group operations with grid sync',
+    gridSync: 'Grid-wide synchronization using atomic counters',
+    atomic: 'Atomic operations (native, f32 emulated, f64 emulated)',
     blas: 'cuBLAS-compatible linear algebra (SAXPY, SGEMM, etc.)',
     fft: 'cuFFT-compatible Fast Fourier Transform',
     rand: 'cuRAND-compatible random number generation (Philox RNG)',
@@ -340,22 +375,24 @@ export const CUDA_SDK_INFO = {
   features: [
     'Full CUDA Runtime API compatibility layer',
     'Comprehensive math library with 100+ functions',
-    'Vector types (float2/3/4, int2/3/4, matrices, quaternions)',
+    'Vector types (float2/3/4, double2/3/4, int2/3/4, matrices, quaternions)',
+    'Double precision (f64) emulation with arithmetic and math functions',
     'Texture and surface operations with samplers',
     'Warp-level primitives emulation',
     'Cooperative groups for collective operations',
-    'Native and emulated atomic operations',
+    'Grid-wide synchronization via atomic counters',
+    'Native and emulated atomic operations (i32, u32, f32, f64)',
     'cuBLAS-compatible BLAS operations',
     'cuFFT-compatible FFT operations',
     'cuRAND-compatible RNG (Philox 4x32-10)',
     'CUDA to WGSL transpiler utilities',
   ],
   limitations: [
-    'No native f64 (double) support',
+    'f64 (double) is emulated (~44-bit precision vs 53-bit native)',
     'Warp primitives emulated via shared memory',
     'No dynamic parallelism',
     'Maximum workgroup size ~256',
-    'Float atomics use CAS loops',
-    'No grid-wide synchronization',
+    'Float/double atomics use CAS loops (slower than native)',
+    'Grid sync requires spin-waiting (consumes GPU resources)',
   ],
 };
