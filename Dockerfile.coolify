@@ -1,0 +1,10 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /src
+COPY package*.json ./
+RUN npm install && npm install --no-save terser@5.44.0
+COPY . .
+RUN cp public/index.html index.html && npm run build
+FROM nginx:alpine
+COPY --from=build /src/dist /usr/share/nginx/html
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
